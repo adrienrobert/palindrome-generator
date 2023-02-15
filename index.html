@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Palindrome Generator</title>
-    <script type="module" src="worker.js"></script>
 </head>
 <body>
     <main>
@@ -11,37 +10,96 @@
             <label for="nb-lettres">Number of letters:</label>
             <input type="number" id="nb-lettres" min="3" max="10" value="3">
             <button id="generate-btn">Generate</button>
+            <button id="stop-btn">Stop</button>
         </div>
         <div id="palindromes-container"></div>
     </main>
     
+    <script type="worker">
+        // Écouter les messages envoyés par le thread principal
+        self.onmessage = function(event) {
+            const numLetters = event.data;
+            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; // Lettres disponibles
+            const results = [];
+            
+            // Fonction récursive pour générer les palindromes
+            function generatePalindromesHelper(currPalindrome) {
+                // Vérifier si la longueur du palindrome est atteinte
+                if (currPalindrome.length === parseInt(numLetters)) {
+                    if (isPalindrome(currPalindrome)) {
+                        results.push(currPalindrome);
+                    }
+                    // Envoyer les résultats au thread principal toutes les 1000 itérations
+                    if (results.length % 1 === 0) {
+                        self.postMessage(results);
+                        results.length = 0; // Réinitialiser le tableau de résultats
+                    }
+                    return;
+                }
+                
+                // Ajouter chaque lettre possible au palindrome
+                for (let i = 0; i < letters.length; i++) {
+                    const nextPalindrome = currPalindrome + letters[i];
+                    let valid = true;
+                    
+                    // Vérifier si la contrainte est respectée
+                    for (let j = 0; j < nextPalindrome.length - 2; j++) {
+                        if (nextPalindrome[j] === nextPalindrome[j + 1] && nextPalindrome[j] === nextPalindrome[j + 2]) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    
+                    if (valid) {
+                        generatePalindromesHelper(nextPalindrome);
+                    }
+                }
+            }
+            
+            function isPalindrome(str) {
+                const len = str.length;
+                for (let i = 0; i < len / 2; i++) {
+                    if (str[i] !== str[len - 1 - i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            // Appeler la fonction récursive pour générer les palindromes
+            generatePalindromesHelper('');
+            
+            // Envoyer les derniers résultats au thread principal
+            self.postMessage(results);
+        };
+    </script>
+    
     <script>
+        const workerBlob = new Blob([document.querySelector('script[type="worker"]').textContent]);
+        const workerUrl = URL.createObjectURL(workerBlob);
+        const worker = new Worker(workerUrl);
         const container = document.getElementById("palindromes-container");
         const generateBtn = document.getElementById("generate-btn");
+        const stopBtn = document.getElementById("stop-btn");
         const nbLettresInput = document.getElementById("nb-lettres");
-        
         
         
         function generatePalindromesAsync(numLetters) {
             return new Promise((resolve, reject) => {
-                const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; // Lettres disponibles
                 const results = [];
                 
-                // Créer un nouveau Web Worker pour effectuer les calculs en arrière-plan
-                const worker = new Worker('worker.js');
-                
                 // Envoyer un message au Worker pour initialiser la recherche
-                worker.postMessage({ numLetters });
+                worker.postMessage(numLetters);
                 
                 // Écouter les messages renvoyés par le Worker
                 worker.onmessage = (event) => {
-                    if (event.data.type === 'result') {
-                        const result = event.data.result;
+                    if (event.type === 'message') {
+                        const result = event.data;
                         results.push(result);
                         const resultElement = document.createElement('p');
                         resultElement.innerText = result;
-                        document.getElementById('palindromes-container').appendChild(resultElement);
-                    } else if (event.data.type === 'complete') {
+                        container.appendChild(resultElement);
+                    } else if (event.type === 'complete') {
                         resolve(results);
                         worker.terminate();
                     }
@@ -52,21 +110,21 @@
                     reject(error);
                     worker.terminate();
                 };
+                
             });
         }
         
-        
-        
         generateBtn.addEventListener("click", async () => {
             container.innerHTML = "";
-            generatePalindromesAsync(Number(nbLettresInput.value));
-            // const palindromes = await generatePalindromesAsync(Number(nbLettresInput.value));
-            // console.log(generatePalindromes(Number(nbLettresInput.value)));
-            // const nbLettres = ;
-            // await generatePalindromes(nbLettres);
+            generatePalindromesAsync(nbLettresInput.value);
+        });
+
+        stopBtn.addEventListener("click", async () => {
+            worker.terminate();
         });
         
     </script>
+    
     <style>
         
         body{
